@@ -256,7 +256,7 @@ export default function ClairautSolver() {
                 Rectas Solución General (C ∈ [-4, 4])
               </span>
               <span className="flex items-center gap-1.5 font-medium text-gray-700">
-                <span className="w-3 h-3 bg-red-600 inline-block rounded-full"></span> 
+                <span className="w-3 h-3 bg-gray-600 inline-block rounded-full"></span> 
                 Solución Singular (Envolvente)
               </span>
             </div>
