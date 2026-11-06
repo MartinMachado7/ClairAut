@@ -261,7 +261,7 @@ export default function ClairautSolver() {
               </span>
             </div>
 
-            <div ref={plotRef} className="w-full flex justify-center overflow-hidden border border-gray-200 rounded-lg bg-white"></div>
+            <div ref={plotRef} className="w-full flex justify-center overflow-hidden border border-red-200 rounded-lg bg-white"></div>
           </div>
         </div>
       )}
