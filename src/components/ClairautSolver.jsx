@@ -6,7 +6,7 @@ import 'katex/dist/katex.min.css';
 import { InlineMath, BlockMath } from 'react-katex';
 
 export default function ClairautSolver() {
-  const [fpInput, setFpInput] = useState("1/p");
+  const [fpInput, setFpInput] = useState("√p");
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const plotRef = useRef(null);
@@ -223,7 +223,7 @@ export default function ClairautSolver() {
               type="text"
               value={fpInput}
               onChange={(e) => setFpInput(e.target.value)}
-              placeholder="Ej: p^2, 1/p, sqrt(p)"
+              placeholder="Ej: p^2, 1/p, √(p)"
               className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-lg text-gray-900 bg-white"
             />
           </div>
