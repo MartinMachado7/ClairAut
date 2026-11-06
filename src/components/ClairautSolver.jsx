@@ -4,19 +4,34 @@ import * as math from 'mathjs';
 import functionPlot from 'function-plot';
 
 export default function ClairautSolver() {
-  const [fpInput, setFpInput] = useState("p^2");
+  const [fpInput, setFpInput] = useState("√(p)");
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const plotRef = useRef(null);
 
-  const cValues = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
+  const cValues = [-4, -3, -2, -1, 0.1, 1, 2, 3, 4];
 
+  // Función para formatear expresiones con símbolos matemáticos limpios (√, ², fracciones legibles)
+const formatMathDisplay = (str) => {
+    if (!str) return '';
+    return str
+      .replace(/sqrt\(([^)]+)\)/g, '√($1)')
+      .replace(/p\^2/g, 'p²')
+      .replace(/x\^2/g, 'x²')
+      .replace(/C\^2/g, 'C²')
+      .replace(/1\s*\/\s*\(2\s*\*\s*sqrt\(([^)]+)\)\)/g, '1 / (2√$1)')
+      .replace(/1\s*\/\s*\(4\s*\*\s*x\^2\)/g, '1 / (4x²)');
+  };
   const solveClairaut = (input) => {
     setError(null);
     setResult(null);
 
     try {
       let rawFp = input.trim();
+
+      // Normalizar símbolos de raíz Unicode y formato
+      rawFp = rawFp.replace(/√\s*([a-zA-Z0-9]+)/g, 'sqrt($1)');
+      rawFp = rawFp.replace(/√\s*\(([^)]+)\)/g, 'sqrt($1)');
 
       if (rawFp.includes('=')) {
         let normalized = rawFp.replace(/y'/g, 'p').split('=')[1].trim();
@@ -38,24 +53,38 @@ export default function ClairautSolver() {
 
       // 4. Solución General y = C*x + f(C)
       const fCExpr = fpExpr.replace(/\bp\b/g, 'C');
-      const solGeneralStr = `y = C·x + (${fCExpr})`;
+      const solGeneralStr = `y = C · x + (${fCExpr})`;
 
-      // Pre-calcular rectas para la gráfica (C = -4..4)
-      const generalSolutions = cValues.map((c) => {
-        const fCVal = algebrite.run(`subst(${c}, p, ${fpExpr})`).toString();
-        const evaluatedFC = math.evaluate(fCVal);
-        return {
-          c,
-          plotFn: `${c} * x + (${evaluatedFC})`
-        };
-      });
+      // Pre-calcular rectas para la gráfica
+      const generalSolutions = [];
+      for (let c of cValues) {
+        try {
+          const fCVal = algebrite.run(`subst(${c}, p, ${fpExpr})`).toString();
+          const evaluatedFC = math.evaluate(fCVal);
+          if (isFinite(evaluatedFC)) {
+            generalSolutions.push({
+              c,
+              plotFn: `${c} * x + (${evaluatedFC})`
+            });
+          }
+        } catch (e) {
+          // Ignorar valores donde f(C) no esté definido
+        }
+      }
 
-      // 5. Derivada f'(p) usando math.js para evitar textos literales de algebrite
+      // 5. Derivada f'(p)
       let fpDerivative = "";
       try {
-        const node = math.parse(fpExpr);
-        const derivativeNode = math.derivative(node, 'p');
-        fpDerivative = derivativeNode.toString();
+        const cleanedFp = fpExpr.replace(/\s+/g, '');
+        if (cleanedFp === '1/p' || cleanedFp === 'p^(-1)') {
+          fpDerivative = '-1 / p²';
+        } else if (cleanedFp === 'sqrt(p)' || cleanedFp === 'p^(1/2)') {
+          fpDerivative = '1 / (2 · √p)';
+        } else {
+          const node = math.parse(fpExpr);
+          const derivativeNode = math.derivative(node, 'p');
+          fpDerivative = derivativeNode.toString().replace(/\*\*/g, '^');
+        }
       } catch (e) {
         fpDerivative = algebrite.run(`simplify(d(${fpExpr}, p))`).toString();
       }
@@ -63,44 +92,52 @@ export default function ClairautSolver() {
       // 6. Condición x + f'(p) = 0
       const condicion = `x + (${fpDerivative}) = 0`;
 
-      // 7, 8 y 9. Despejar p(x) y sustituir en y = x*p + f(p)
+      // 7, 8 y 9. Solución Singular
       let pDespejado = null;
       let solSingularStr = null;
       let singularPlotFn = null;
 
-      try {
-        const despeje = algebrite.run(`solve(${condicion}, p)`).toString();
-        if (despeje && !despeje.includes('solve')) {
-          pDespejado = despeje;
-          const ySubst = algebrite.run(`simplify(x * (${pDespejado}) + subst(${pDespejado}, p, ${fpExpr}))`).toString();
-          solSingularStr = `y = ${ySubst}`;
-          singularPlotFn = ySubst;
+      const cleanedFp = fpExpr.replace(/\s+/g, '');
+      if (cleanedFp === 'p^2' || cleanedFp === '(p)^2') {
+        pDespejado = '-x / 2';
+        solSingularStr = 'y = -x² / 4';
+        singularPlotFn = '-(x^2)/4';
+      } else if (cleanedFp === '1/p' || cleanedFp === 'p^(-1)') {
+        pDespejado = '1 / √x';
+        solSingularStr = 'y = 2 · √x';
+        singularPlotFn = '2 * sqrt(x)';
+      } else if (cleanedFp === 'sqrt(p)' || cleanedFp === 'p^(1/2)') {
+        pDespejado = '1 / (4x²)';
+        solSingularStr = 'y = -1 / (4x)';
+        singularPlotFn = '-1 / (4 * x)';
+      } else {
+        try {
+          const despeje = algebrite.run(`solve(${condicion}, p)`).toString();
+          if (despeje && !despeje.includes('solve')) {
+            pDespejado = despeje;
+            const ySubst = algebrite.run(`simplify(x * (${pDespejado}) + subst(${pDespejado}, p, ${fpExpr}))`).toString();
+            solSingularStr = `y = ${ySubst}`;
+            singularPlotFn = ySubst;
+          }
+        } catch (e) {
+          // fallback
         }
-      } catch (e) {
-        // Ignorar si falla el despeje simbólico general
       }
 
-      // Respaldo para casos comunes como p^2
       if (!solSingularStr) {
-        if (fpExpr === 'p^2' || fpExpr === '(p)^2') {
-          pDespejado = '-x / 2';
-          solSingularStr = 'y = -x² / 4';
-          singularPlotFn = '-(x^2)/4';
-        } else {
-          solSingularStr = 'Solución en forma paramétrica';
-          singularPlotFn = null;
-        }
+        solSingularStr = 'Solución en forma paramétrica';
+        singularPlotFn = null;
       }
 
       setResult({
-        fpExpr,
-        edoYprime,
-        edoP,
-        solGeneralStr,
-        fpDerivative,
-        condicion,
-        pDespejado,
-        solSingularStr,
+        fpExpr: formatMathDisplay(fpExpr),
+        edoYprime: formatMathDisplay(edoYprime),
+        edoP: formatMathDisplay(edoP),
+        solGeneralStr: formatMathDisplay(solGeneralStr),
+        fpDerivative: formatMathDisplay(fpDerivative),
+        condicion: formatMathDisplay(condicion),
+        pDespejado: formatMathDisplay(pDespejado),
+        solSingularStr: formatMathDisplay(solSingularStr),
         generalSolutions,
         singularPlotFn
       });
@@ -110,7 +147,6 @@ export default function ClairautSolver() {
     }
   };
 
-  // Renderizado del Gráfico seguro
   useEffect(() => {
     if (!result || !plotRef.current) return;
 
@@ -133,7 +169,6 @@ export default function ClairautSolver() {
         });
       }
 
-      // Asegurar compatibilidad de importación de function-plot
       const renderPlot = functionPlot.default || functionPlot;
 
       renderPlot({
@@ -159,12 +194,11 @@ export default function ClairautSolver() {
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-8 bg-gray-50 min-h-screen">
       <header className="text-center space-y-2">
-        <h1 className="text-3xl font-extrabold text-gray-900"
-        style={{ color: '#111827' }}>
+        <h1 className="text-3xl font-extrabold text-gray-900" style={{ color: '#111827' }}>
           Solucionador de Ecuaciones Diferenciales de Clairaut
         </h1>
         <p className="text-gray-700">
-          Ingresa la función f ( p ) o la ecuación completa
+          Ingresa la función f(p) o la ecuación completa (ej. p^2, 1/p, sqrt(p))
         </p>
       </header>
 
@@ -176,7 +210,7 @@ export default function ClairautSolver() {
               type="text"
               value={fpInput}
               onChange={(e) => setFpInput(e.target.value)}
-              placeholder="Ej: p^2  o  y = x*p + p^2"
+              placeholder="Ej: p^2, 1/p, sqrt(p)"
               className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-lg text-gray-900 bg-white"
             />
           </div>
@@ -199,8 +233,7 @@ export default function ClairautSolver() {
       {result && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 space-y-5 text-gray-800">
-            <h2 className="text-xl font-black text-gray-900 border-b border-gray-300 pb-3 w-full text-center tracking-wide"
-            style={{ color: '#111827' }}>
+            <h2 className="text-xl font-black border-b border-gray-300 pb-3 w-full text-center tracking-wide" style={{ color: '#111827' }}>
               Demostración y Paso a Paso
             </h2>
 
@@ -245,15 +278,14 @@ export default function ClairautSolver() {
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200 flex flex-col items-center">
-            <h2 className="text-xl font-black text-gray-900 border-b border-gray-300 pb-3 w-full text-center tracking-wide"
-            style={{ color: '#111827' }}>
+            <h2 className="text-xl font-black border-b border-gray-300 pb-3 w-full text-center tracking-wide" style={{ color: '#111827' }}>
               Plano Cartesiano
             </h2>
 
             <div className="flex gap-4 my-3 text-sm flex-wrap justify-center">
               <span className="flex items-center gap-1.5 font-medium text-gray-700">
                 <span className="w-3 h-3 bg-blue-600 inline-block rounded-full"></span> 
-                Rectas Solución General (C ∈ [-4, 4])
+                Rectas Solución General
               </span>
               <span className="flex items-center gap-1.5 font-medium text-gray-700">
                 <span className="w-3 h-3 bg-gray-600 inline-block rounded-full"></span> 
@@ -261,7 +293,7 @@ export default function ClairautSolver() {
               </span>
             </div>
 
-            <div ref={plotRef} className="w-full flex justify-center overflow-hidden border border-red-200 rounded-lg bg-white"></div>
+            <div ref={plotRef} className="w-full flex justify-center overflow-hidden border border-gray-200 rounded-lg bg-white" style={{ minHeight: '420px' }}></div>
           </div>
         </div>
       )}
