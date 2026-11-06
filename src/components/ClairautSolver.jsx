@@ -2,26 +2,36 @@ import React, { useState, useEffect, useRef } from 'react';
 import algebrite from 'algebrite';
 import * as math from 'mathjs';
 import functionPlot from 'function-plot';
+import 'katex/dist/katex.min.css';
+import { InlineMath } from 'react-katex';
 
 export default function ClairautSolver() {
-  const [fpInput, setFpInput] = useState("√(p)");
+  const [fpInput, setFpInput] = useState("sqrt(p)");
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const plotRef = useRef(null);
 
   const cValues = [-4, -3, -2, -1, 0.1, 1, 2, 3, 4];
 
-  // Función para formatear expresiones con símbolos matemáticos limpios (√, ², fracciones legibles)
-const formatMathDisplay = (str) => {
+  const formatToLatex = (str) => {
     if (!str) return '';
-    return str
-      .replace(/sqrt\(([^)]+)\)/g, '√($1)')
-      .replace(/p\^2/g, 'p²')
-      .replace(/x\^2/g, 'x²')
-      .replace(/C\^2/g, 'C²')
-      .replace(/1\s*\/\s*\(2\s*\*\s*sqrt\(([^)]+)\)\)/g, '1 / (2√$1)')
-      .replace(/1\s*\/\s*\(4\s*\*\s*x\^2\)/g, '1 / (4x²)');
+    let latex = str
+      .replace(/sqrt\(([^)]+)\)/g, '\\sqrt{$1}')
+      .replace(/p\^\(1\/2\)/g, '\\sqrt{p}')
+      .replace(/y'\^\(1\/2\)/g, '\\sqrt{y\'}')
+      .replace(/C\^\(1\/2\)/g, '\\sqrt{C}')
+      .replace(/p\^2/g, 'p^2')
+      .replace(/x\^2/g, 'x^2')
+      .replace(/C\^2/g, 'C^2')
+      .replace(/\*\*/g, '^');
+
+    latex = latex.replace(/1\s*\/\s*\(\s*2\s*\*\s*\\sqrt\{p\}\s*\)/g, '\\frac{1}{2\\sqrt{p}}');
+    latex = latex.replace(/1\s*\/\s*\(\s*4\s*\*\s*x\^2\s*\)/g, '\\frac{1}{4x^2}');
+    latex = latex.replace(/-1\s*\/\s*\(\s*4\s*\*\s*x\s*\)/g, '-\\frac{1}{4x}');
+
+    return latex;
   };
+
   const solveClairaut = (input) => {
     setError(null);
     setResult(null);
@@ -29,7 +39,6 @@ const formatMathDisplay = (str) => {
     try {
       let rawFp = input.trim();
 
-      // Normalizar símbolos de raíz Unicode y formato
       rawFp = rawFp.replace(/√\s*([a-zA-Z0-9]+)/g, 'sqrt($1)');
       rawFp = rawFp.replace(/√\s*\(([^)]+)\)/g, 'sqrt($1)');
 
@@ -44,18 +53,14 @@ const formatMathDisplay = (str) => {
         rawFp = rawFp.replace(/y'/g, 'p');
       }
 
-      // 1. f(p)
       const fpExpr = algebrite.run(`simplify(${rawFp})`).toString();
 
-      // 2 & 3. Ecuaciones mostradas
-      const edoYprime = `y = x · y' + (${fpExpr.replace(/p/g, "y'")})`;
-      const edoP = `y = x · p + (${fpExpr})`;
+      const edoYprime = `y = x \\cdot y' + ${fpExpr.replace(/p/g, "y'")}`;
+      const edoP = `y = x \\cdot p + (${fpExpr})`;
 
-      // 4. Solución General y = C*x + f(C)
       const fCExpr = fpExpr.replace(/\bp\b/g, 'C');
-      const solGeneralStr = `y = C · x + (${fCExpr})`;
+      const solGeneralStr = `y = C \\cdot x + (${fCExpr})`;
 
-      // Pre-calcular rectas para la gráfica
       const generalSolutions = [];
       for (let c of cValues) {
         try {
@@ -67,48 +72,43 @@ const formatMathDisplay = (str) => {
               plotFn: `${c} * x + (${evaluatedFC})`
             });
           }
-        } catch (e) {
-          // Ignorar valores donde f(C) no esté definido
-        }
+        } catch (e) {}
       }
 
-      // 5. Derivada f'(p)
       let fpDerivative = "";
       try {
         const cleanedFp = fpExpr.replace(/\s+/g, '');
         if (cleanedFp === '1/p' || cleanedFp === 'p^(-1)') {
-          fpDerivative = '-1 / p²';
+          fpDerivative = '-\\frac{1}{p^2}';
         } else if (cleanedFp === 'sqrt(p)' || cleanedFp === 'p^(1/2)') {
-          fpDerivative = '1 / (2 · √p)';
+          fpDerivative = '\\frac{1}{2\\sqrt{p}}';
         } else {
           const node = math.parse(fpExpr);
           const derivativeNode = math.derivative(node, 'p');
-          fpDerivative = derivativeNode.toString().replace(/\*\*/g, '^');
+          fpDerivative = derivativeNode.toString();
         }
       } catch (e) {
         fpDerivative = algebrite.run(`simplify(d(${fpExpr}, p))`).toString();
       }
 
-      // 6. Condición x + f'(p) = 0
       const condicion = `x + (${fpDerivative}) = 0`;
 
-      // 7, 8 y 9. Solución Singular
       let pDespejado = null;
       let solSingularStr = null;
       let singularPlotFn = null;
 
       const cleanedFp = fpExpr.replace(/\s+/g, '');
       if (cleanedFp === 'p^2' || cleanedFp === '(p)^2') {
-        pDespejado = '-x / 2';
-        solSingularStr = 'y = -x² / 4';
+        pDespejado = '-\\frac{x}{2}';
+        solSingularStr = 'y = -\\frac{x^2}{4}';
         singularPlotFn = '-(x^2)/4';
       } else if (cleanedFp === '1/p' || cleanedFp === 'p^(-1)') {
-        pDespejado = '1 / √x';
-        solSingularStr = 'y = 2 · √x';
+        pDespejado = '\\frac{1}{\\sqrt{x}}';
+        solSingularStr = 'y = 2\\sqrt{x}';
         singularPlotFn = '2 * sqrt(x)';
       } else if (cleanedFp === 'sqrt(p)' || cleanedFp === 'p^(1/2)') {
-        pDespejado = '1 / (4x²)';
-        solSingularStr = 'y = -1 / (4x)';
+        pDespejado = '\\frac{1}{4x^2}';
+        solSingularStr = 'y = -\\frac{1}{4x}';
         singularPlotFn = '-1 / (4 * x)';
       } else {
         try {
@@ -119,9 +119,7 @@ const formatMathDisplay = (str) => {
             solSingularStr = `y = ${ySubst}`;
             singularPlotFn = ySubst;
           }
-        } catch (e) {
-          // fallback
-        }
+        } catch (e) {}
       }
 
       if (!solSingularStr) {
@@ -130,14 +128,14 @@ const formatMathDisplay = (str) => {
       }
 
       setResult({
-        fpExpr: formatMathDisplay(fpExpr),
-        edoYprime: formatMathDisplay(edoYprime),
-        edoP: formatMathDisplay(edoP),
-        solGeneralStr: formatMathDisplay(solGeneralStr),
-        fpDerivative: formatMathDisplay(fpDerivative),
-        condicion: formatMathDisplay(condicion),
-        pDespejado: formatMathDisplay(pDespejado),
-        solSingularStr: formatMathDisplay(solSingularStr),
+        fpExpr: formatToLatex(fpExpr),
+        edoYprime: formatToLatex(edoYprime),
+        edoP: formatToLatex(edoP),
+        solGeneralStr: formatToLatex(solGeneralStr),
+        fpDerivative: formatToLatex(fpDerivative),
+        condicion: formatToLatex(condicion),
+        pDespejado: pDespejado ? formatToLatex(pDespejado) : null,
+        solSingularStr: formatToLatex(solSingularStr),
         generalSolutions,
         singularPlotFn
       });
@@ -239,39 +237,39 @@ const formatMathDisplay = (str) => {
 
             <section className="space-y-1">
               <h3 className="font-semibold text-blue-700 text-sm">Ecuación Planteada</h3>
-              <div className="bg-gray-100 p-2.5 rounded font-mono text-sm text-gray-900 space-y-1">
-                <div>Original: <span className="font-bold">{result.edoYprime}</span></div>
-                <div>Con p = y': <span className="font-bold">{result.edoP}</span></div>
+              <div className="bg-gray-100 p-3 rounded text-sm text-gray-900 space-y-2 text-center">
+                <div>Original: <InlineMath math={result.edoYprime} /></div>
+                <div>Con <InlineMath math="p = y'" />: <InlineMath math={result.edoP} /></div>
               </div>
             </section>
 
             <section className="space-y-1">
               <h3 className="font-semibold text-blue-700 text-sm">Solución General</h3>
-              <div className="bg-blue-50 border border-blue-200 p-2.5 rounded font-mono text-blue-900 font-bold text-sm">
-                {result.solGeneralStr}
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded text-blue-900 font-bold text-sm text-center">
+                <InlineMath math={result.solGeneralStr} />
               </div>
             </section>
 
             <section className="space-y-1">
               <h3 className="font-semibold text-blue-700 text-sm">Derivada y Condición Singular</h3>
-              <div className="bg-gray-100 p-2.5 rounded font-mono text-sm text-gray-900 space-y-1">
-                <div>f'(p) = <span className="font-bold">{result.fpDerivative}</span></div>
-                <div>Condición: <span className="font-bold">{result.condicion}</span></div>
+              <div className="bg-gray-100 p-3 rounded text-sm text-gray-900 space-y-2 text-center">
+                <div><InlineMath math="f'(p) =" /> <InlineMath math={result.fpDerivative} /></div>
+                <div>Condición: <InlineMath math={result.condicion} /></div>
               </div>
             </section>
 
             <section className="space-y-1">
               <h3 className="font-semibold text-blue-700 text-sm">Solución Singular (Envolvente)</h3>
-              <div className="bg-amber-50 border border-amber-200 p-3 rounded font-mono text-sm text-amber-900 space-y-2">
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded text-sm text-amber-900 space-y-3 text-center">
                 <div>
-                  <span className="text-xs text-gray-600 block">Despeje de p(x):</span>
-                  <span className="font-bold">{result.pDespejado ? `p = ${result.pDespejado}` : 'No despejable directamente'}</span>
+                  <span className="text-xs text-gray-600 block mb-1">Despeje de p(x):</span>
+                  <span className="font-bold">{result.pDespejado ? <InlineMath math={`p = ${result.pDespejado}`} /> : 'No despejable directamente'}</span>
                 </div>
                 <div>
-                  <span className="text-xs text-gray-600 block">Reemplazo y Solución Singular Final:</span>
-                  <span className="text-base font-bold text-gray-900 bg-white px-2 py-1 border border-amber-300 rounded inline-block mt-1">
-                    {result.solSingularStr}
-                  </span>
+                  <span className="text-xs text-gray-600 block mb-1">Reemplazo y Solución Singular Final:</span>
+                  <div className="bg-white p-2 border border-amber-300 rounded inline-block shadow-sm">
+                    <InlineMath math={result.solSingularStr} />
+                  </div>
                 </div>
               </div>
             </section>
